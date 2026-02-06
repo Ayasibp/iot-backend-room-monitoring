@@ -25,6 +25,12 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type RegisterRequest struct {
+	Username string `json:"username" binding:"required,min=3,max=50"`
+	Password string `json:"password" binding:"required,min=6"`
+	Role     string `json:"role" binding:"omitempty,oneof=admin user"`
+}
+
 // Login handles user authentication
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
@@ -100,4 +106,42 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetCookie("refresh_token", "", -1, "/", "", false, true)
 
 	utils.MessageResponse(c, "Logged out successfully")
+}
+
+// Register handles user registration
+func (h *AuthHandler) Register(c *gin.Context) {
+	var req RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Set default role if not specified
+	if req.Role == "" {
+		req.Role = "user"
+	}
+
+	// Register user
+	response, err := h.authService.Register(req.Username, req.Password, req.Role)
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Set refresh token as HttpOnly cookie
+	c.SetCookie(
+		"refresh_token",               // name
+		response.RefreshToken,         // value
+		int(7*24*time.Hour.Seconds()), // maxAge in seconds (7 days)
+		"/",                           // path
+		"",                            // domain (empty means current domain)
+		false,                         // secure (set to true in production with HTTPS)
+		true,                          // httpOnly
+	)
+
+	// Return access token and user info in JSON
+	utils.SuccessResponse(c, gin.H{
+		"access_token": response.AccessToken,
+		"user":         response.User,
+	})
 }

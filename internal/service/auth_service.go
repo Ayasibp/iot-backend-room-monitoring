@@ -124,3 +124,67 @@ func (s *AuthService) Logout(refreshToken string) error {
 
 	return nil
 }
+
+// Register creates a new user account
+func (s *AuthService) Register(username, password, role string) (*LoginResponse, error) {
+	// Check if username already exists
+	existingUser, err := s.userRepo.FindUserByUsername(username)
+	if err == nil && existingUser != nil {
+		return nil, errors.New("username already exists")
+	}
+
+	// Hash the password
+	passwordHash, err := utils.HashPassword(password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	// Create user
+	user := &models.User{
+		Username:     username,
+		PasswordHash: passwordHash,
+		Role:         role,
+	}
+
+	if err := s.userRepo.CreateUser(user); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Generate access token
+	accessToken, err := utils.GenerateAccessToken(user.ID, user.Role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate access token: %w", err)
+	}
+
+	// Generate refresh token
+	refreshToken, err := utils.GenerateRefreshToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+	}
+
+	// Hash and store refresh token
+	tokenHash := utils.HashRefreshToken(refreshToken)
+	refreshTokenModel := &models.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: tokenHash,
+		ExpiresAt: time.Now().Add(utils.GetRefreshTokenExpiry()),
+	}
+
+	if err := s.userRepo.CreateRefreshToken(refreshTokenModel); err != nil {
+		return nil, fmt.Errorf("failed to store refresh token: %w", err)
+	}
+
+	// Log registration action
+	userIDPtr := &user.ID
+	_ = s.auditRepo.CreateAuditLog(userIDPtr, "user_registration", fmt.Sprintf("User %s registered", username))
+
+	return &LoginResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		User: UserResponse{
+			ID:       user.ID,
+			Username: user.Username,
+			Role:     user.Role,
+		},
+	}, nil
+}
