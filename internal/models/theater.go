@@ -63,6 +63,14 @@ type TheaterLiveState struct {
 	AhuCycleStartTime  *time.Time `gorm:"column:ahu_cycle_start_time" json:"ahu_cycle_start_time"`
 	LastProcessedRawID int        `gorm:"column:last_processed_raw_id;default:0" json:"last_processed_raw_id"`
 
+	// F. Medical gases
+	Oxygen     *float64 `json:"oxygen"`
+	Nitrous    *float64 `json:"nitrous"`
+	Air        *float64 `json:"air"`
+	Vacuum     *int     `json:"vacuum"`
+	Instrument *float64 `json:"instrument"`
+	Carbon     *float64 `json:"carbon"`
+
 	UpdatedAt time.Time `gorm:"default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
