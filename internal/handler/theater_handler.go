@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"iot-backend-room-monitoring/internal/service"
@@ -152,4 +153,142 @@ func (h *TheaterHandler) AdjustCountdownTimer(c *gin.Context) {
 	}
 
 	utils.MessageResponse(c, "Countdown timer adjusted successfully")
+}
+
+// GetRoomDashboard returns the live state for a specific room by room_id
+// This is the new room_id-based endpoint with full room + hospital context
+func (h *TheaterHandler) GetRoomDashboard(c *gin.Context) {
+	// Parse room_id from path parameter
+	roomID, err := parseUintParam(c, "room_id")
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid room ID")
+		return
+	}
+
+	// Get user info from context
+	userID, _ := c.Get("userID")
+	role, _ := c.Get("role")
+
+	// Get live state with access control
+	state, err := h.theaterService.GetLiveStateByRoomID(roomID, userID.(uint), role.(string))
+	if err != nil {
+		if err.Error() == "live state not found for room" {
+			utils.ErrorResponse(c, http.StatusNotFound, err.Error())
+		} else if err.Error() == "access denied: you don't have permission to access this room" {
+			utils.ErrorResponse(c, http.StatusForbidden, err.Error())
+		} else {
+			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch room state")
+		}
+		return
+	}
+
+	utils.SuccessResponse(c, state)
+}
+
+// UpdateTimerByRoomID handles operation timer control by room_id (admin only)
+func (h *TheaterHandler) UpdateTimerByRoomID(c *gin.Context) {
+	var req TimerOperationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request. Action must be 'start', 'stop', or 'reset'")
+		return
+	}
+
+	// Parse room_id from path parameter
+	roomID, err := parseUintParam(c, "room_id")
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid room ID")
+		return
+	}
+
+	// Get user info from context
+	userID, _ := c.Get("userID")
+	role, _ := c.Get("role")
+
+	// Update the timer
+	if err := h.theaterService.UpdateOperationTimerByRoomID(roomID, req.Action, userID.(uint), role.(string)); err != nil {
+		if err.Error() == "access denied: you don't have permission to access this room" {
+			utils.ErrorResponse(c, http.StatusForbidden, err.Error())
+		} else {
+			utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	utils.MessageResponse(c, "Timer operation completed successfully")
+}
+
+// UpdateCountdownTimerByRoomID handles countdown timer control by room_id (admin only)
+func (h *TheaterHandler) UpdateCountdownTimerByRoomID(c *gin.Context) {
+	var req CountdownTimerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request. Action must be 'start', 'stop', or 'reset'")
+		return
+	}
+
+	// Parse room_id from path parameter
+	roomID, err := parseUintParam(c, "room_id")
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid room ID")
+		return
+	}
+
+	// Get user info from context
+	userID, _ := c.Get("userID")
+	role, _ := c.Get("role")
+
+	// Update the countdown timer
+	if err := h.theaterService.UpdateCountdownTimerByRoomID(roomID, req.Action, req.DurationMinutes, userID.(uint), role.(string)); err != nil {
+		if err.Error() == "access denied: you don't have permission to access this room" {
+			utils.ErrorResponse(c, http.StatusForbidden, err.Error())
+		} else {
+			utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	utils.MessageResponse(c, "Countdown timer operation completed successfully")
+}
+
+// AdjustCountdownTimerByRoomID handles adjusting countdown timer by +/- 1 minute by room_id (admin only)
+func (h *TheaterHandler) AdjustCountdownTimerByRoomID(c *gin.Context) {
+	var req AdjustTimerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid request. Minutes must be -1 or 1")
+		return
+	}
+
+	// Parse room_id from path parameter
+	roomID, err := parseUintParam(c, "room_id")
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid room ID")
+		return
+	}
+
+	// Get user info from context
+	userID, _ := c.Get("userID")
+	role, _ := c.Get("role")
+
+	// Adjust the countdown timer
+	if err := h.theaterService.AdjustCountdownTimerByRoomID(roomID, req.Minutes, userID.(uint), role.(string)); err != nil {
+		if err.Error() == "access denied: you don't have permission to access this room" {
+			utils.ErrorResponse(c, http.StatusForbidden, err.Error())
+		} else {
+			utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+
+	utils.MessageResponse(c, "Countdown timer adjusted successfully")
+}
+
+// Helper function to parse uint path parameter
+func parseUintParam(c *gin.Context, paramName string) (uint, error) {
+	idStr := c.Param(paramName)
+	var id uint64
+	var err error
+	_, err = fmt.Sscanf(idStr, "%d", &id)
+	if err != nil {
+		return 0, err
+	}
+	return uint(id), nil
 }

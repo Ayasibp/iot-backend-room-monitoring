@@ -41,13 +41,26 @@ func (r *TheaterRepository) GetAllLiveStates() ([]models.TheaterLiveState, error
 	return states, err
 }
 
-// GetLiveState retrieves the live state for a specific room
+// GetLiveState retrieves the live state for a specific room (legacy method using room_name)
 func (r *TheaterRepository) GetLiveState(roomName string) (*models.TheaterLiveState, error) {
 	var state models.TheaterLiveState
 	err := r.db.Where("room_name = ?", roomName).First(&state).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("live state not found for room: " + roomName)
+		}
+		return nil, err
+	}
+	return &state, nil
+}
+
+// GetLiveStateByRoomID retrieves the live state for a specific room by room_id
+func (r *TheaterRepository) GetLiveStateByRoomID(roomID uint) (*models.TheaterLiveState, error) {
+	var state models.TheaterLiveState
+	err := r.db.Where("room_id = ?", roomID).Preload("Room.Hospital").First(&state).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("live state not found for room")
 		}
 		return nil, err
 	}
@@ -73,16 +86,43 @@ func (r *TheaterRepository) CreateLiveStateIfNotExists(roomName string) error {
 	return nil
 }
 
-// UpdateOperationTimer updates specific operation timer fields
+// UpdateOperationTimer updates specific operation timer fields (legacy method using room_name)
 func (r *TheaterRepository) UpdateOperationTimer(roomName string, updates map[string]interface{}) error {
 	return r.db.Model(&models.TheaterLiveState{}).
 		Where("room_name = ?", roomName).
 		Updates(updates).Error
 }
 
-// UpdateCountdownTimer updates specific countdown timer fields
+// UpdateOperationTimerByRoomID updates specific operation timer fields by room_id
+func (r *TheaterRepository) UpdateOperationTimerByRoomID(roomID uint, updates map[string]interface{}) error {
+	return r.db.Model(&models.TheaterLiveState{}).
+		Where("room_id = ?", roomID).
+		Updates(updates).Error
+}
+
+// UpdateCountdownTimer updates specific countdown timer fields (legacy method using room_name)
 func (r *TheaterRepository) UpdateCountdownTimer(roomName string, updates map[string]interface{}) error {
 	return r.db.Model(&models.TheaterLiveState{}).
 		Where("room_name = ?", roomName).
 		Updates(updates).Error
+}
+
+// UpdateCountdownTimerByRoomID updates specific countdown timer fields by room_id
+func (r *TheaterRepository) UpdateCountdownTimerByRoomID(roomID uint, updates map[string]interface{}) error {
+	return r.db.Model(&models.TheaterLiveState{}).
+		Where("room_id = ?", roomID).
+		Updates(updates).Error
+}
+
+// GetRawTelemetryByRoomID retrieves raw telemetry for a specific room
+func (r *TheaterRepository) GetRawTelemetryByRoomID(roomID uint) (*models.TheaterRawTelemetry, error) {
+	var telemetry models.TheaterRawTelemetry
+	err := r.db.Where("room_id = ?", roomID).First(&telemetry).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("raw telemetry not found for room")
+		}
+		return nil, err
+	}
+	return &telemetry, nil
 }

@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.*
+
+# Documentation
+*.md
+!README.md
+
+# Test scripts
+test_*.sh
+
+# Build artifacts
+bin/
+iot-backend
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore

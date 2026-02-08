@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -58,25 +59,55 @@ func (w *WorkerService) processNewTelemetry() {
 		return
 	}
 
-	// Create a map of live states by room name for quick lookup
-	liveStateMap := make(map[string]*models.TheaterLiveState)
+	// Create a map of live states by room_id for quick lookup
+	// Also maintain room_name map for backward compatibility
+	liveStateMapByID := make(map[uint]*models.TheaterLiveState)
+	liveStateMapByName := make(map[string]*models.TheaterLiveState)
 	for i := range liveStates {
-		liveStateMap[liveStates[i].RoomName] = &liveStates[i]
+		if liveStates[i].RoomID != nil {
+			liveStateMapByID[*liveStates[i].RoomID] = &liveStates[i]
+		}
+		if liveStates[i].RoomName != "" {
+			liveStateMapByName[liveStates[i].RoomName] = &liveStates[i]
+		}
 	}
 
 	// 3. Process each room's telemetry data
 	for _, raw := range rawTelemetry {
-		liveState, exists := liveStateMap[raw.RoomName]
+		var liveState *models.TheaterLiveState
+		var exists bool
+		var roomIdentifier string
+
+		// Try to find live state by room_id first (new method)
+		if raw.RoomID != nil {
+			liveState, exists = liveStateMapByID[*raw.RoomID]
+			roomIdentifier = fmt.Sprintf("room_id=%d", *raw.RoomID)
+		} else if raw.RoomName != "" {
+			// Fallback to room_name (legacy method)
+			liveState, exists = liveStateMapByName[raw.RoomName]
+			roomIdentifier = fmt.Sprintf("room_name=%s", raw.RoomName)
+		} else {
+			log.Printf("Warning: Raw telemetry ID %d has no room_id or room_name", raw.ID)
+			continue
+		}
+
 		if !exists {
 			// Create live state if it doesn't exist for this room
-			if err := w.theaterRepo.CreateLiveStateIfNotExists(raw.RoomName); err != nil {
-				log.Printf("Error creating live state for room %s: %v", raw.RoomName, err)
+			createIdentifier := raw.RoomName
+			if createIdentifier == "" && raw.RoomID != nil {
+				// If we only have room_id, we can't use the old CreateLiveStateIfNotExists
+				log.Printf("Warning: Cannot auto-create live state for room_id %d without room_name", *raw.RoomID)
+				continue
+			}
+			
+			if err := w.theaterRepo.CreateLiveStateIfNotExists(createIdentifier); err != nil {
+				log.Printf("Error creating live state for %s: %v", roomIdentifier, err)
 				continue
 			}
 			// Fetch the newly created live state
-			liveState, err = w.theaterRepo.GetLiveState(raw.RoomName)
+			liveState, err = w.theaterRepo.GetLiveState(createIdentifier)
 			if err != nil {
-				log.Printf("Error fetching newly created live state for room %s: %v", raw.RoomName, err)
+				log.Printf("Error fetching newly created live state for %s: %v", roomIdentifier, err)
 				continue
 			}
 		}
@@ -95,16 +126,24 @@ func (w *WorkerService) processNewTelemetry() {
 
 		// 6. Persist updated state to database
 		if err := w.theaterRepo.UpdateLiveState(liveState); err != nil {
-			log.Printf("Error updating live state for room %s: %v", raw.RoomName, err)
+			log.Printf("Error updating live state for %s: %v", roomIdentifier, err)
 			continue
 		}
 
-		log.Printf("Processed telemetry for room %s - Updated at: %v", raw.RoomName, raw.UpdatedAt)
+		log.Printf("Processed telemetry for %s - Updated at: %v", roomIdentifier, raw.UpdatedAt)
 	}
 }
 
 // processRoomTelemetry processes telemetry data for a single room
 func (w *WorkerService) processRoomTelemetry(liveState *models.TheaterLiveState, raw *models.TheaterRawTelemetry) {
+	// Determine room identifier for logging
+	roomIdentifier := "unknown"
+	if raw.RoomID != nil {
+		roomIdentifier = fmt.Sprintf("room_id=%d", *raw.RoomID)
+	} else if raw.RoomName != "" {
+		roomIdentifier = raw.RoomName
+	}
+
 	// METHOD 1: Theoretical ACH = (laju_aliran * 3600) / volume
 	if raw.LajuAliranAhu > 0 && raw.VolumeRuangan > 0 {
 		liveState.AchTheoretical = float64(raw.LajuAliranAhu*3600) / float64(raw.VolumeRuangan)
@@ -114,7 +153,7 @@ func (w *WorkerService) processRoomTelemetry(liveState *models.TheaterLiveState,
 	// 0 -> 1: Start cycle
 	if liveState.CurrentLogicAhu == 0 && raw.LogicAhu == 1 {
 		liveState.AhuCycleStartTime = &raw.UpdatedAt
-		log.Printf("[%s] ACH cycle started at %v", raw.RoomName, raw.UpdatedAt)
+		log.Printf("[%s] ACH cycle started at %v", roomIdentifier, raw.UpdatedAt)
 	} else if liveState.CurrentLogicAhu == 1 && raw.LogicAhu == 0 {
 		// 1 -> 0: End cycle, calculate
 		if liveState.AhuCycleStartTime != nil {
@@ -122,7 +161,7 @@ func (w *WorkerService) processRoomTelemetry(liveState *models.TheaterLiveState,
 			if duration > 0 {
 				liveState.AchEmpirical = 3600 / duration
 				log.Printf("[%s] ACH cycle completed - Duration: %.2fs, Empirical ACH: %.2f", 
-					raw.RoomName, duration, liveState.AchEmpirical)
+					roomIdentifier, duration, liveState.AchEmpirical)
 			}
 			liveState.AhuCycleStartTime = nil // Reset
 		}
@@ -153,7 +192,7 @@ func (w *WorkerService) processRoomTelemetry(liveState *models.TheaterLiveState,
 	if liveState.CdIsRunning && liveState.CdTargetTime != nil {
 		if time.Now().After(*liveState.CdTargetTime) {
 			liveState.CdIsRunning = false
-			log.Printf("[%s] Countdown timer expired", raw.RoomName)
+			log.Printf("[%s] Countdown timer expired", roomIdentifier)
 		}
 	}
 }

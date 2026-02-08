@@ -38,6 +38,9 @@ func main() {
 	userRepo := repository.NewUserRepo(db)
 	theaterRepo := repository.NewTheaterRepo(db)
 	auditRepo := repository.NewAuditRepo(db)
+	hospitalRepo := repository.NewHospitalRepo(db)
+	roomRepo := repository.NewRoomRepo(db)
+	userHospitalRepo := repository.NewUserHospitalRepo(db)
 
 	// Ensure live state exists for OT-01
 	if err := theaterRepo.CreateLiveStateIfNotExists("OT-01"); err != nil {
@@ -48,6 +51,8 @@ func main() {
 	authService := service.NewAuthService(userRepo, auditRepo)
 	theaterService := service.NewTheaterService(theaterRepo, auditRepo)
 	workerService := service.NewWorkerService(theaterRepo)
+	hospitalService := service.NewHospitalService(hospitalRepo, userHospitalRepo, auditRepo)
+	roomService := service.NewRoomService(roomRepo, hospitalRepo, userHospitalRepo, auditRepo)
 
 	// 6. Start background worker in goroutine
 	ctx, cancel := context.WithCancel(context.Background())
@@ -66,6 +71,8 @@ func main() {
 	// 9. Register handlers
 	authHandler := handler.NewAuthHandler(authService)
 	theaterHandler := handler.NewTheaterHandler(theaterService)
+	hospitalHandler := handler.NewHospitalHandler(hospitalService)
+	roomHandler := handler.NewRoomHandler(roomService)
 
 	// 10. Define routes
 	// Health check endpoint
@@ -97,6 +104,47 @@ func main() {
 		theater.POST("/timer/op", middleware.RequireAdmin(), theaterHandler.UpdateTimer)
 		theater.POST("/timer/cd", middleware.RequireAdmin(), theaterHandler.UpdateCountdownTimer)
 		theater.PATCH("/timer/cd/adjust", middleware.RequireAdmin(), theaterHandler.AdjustCountdownTimer)
+	}
+
+	// API v1 routes
+	api := r.Group("/api/v1")
+	api.Use(middleware.AuthMiddleware())
+	{
+		// Hospital Management
+		hospitals := api.Group("/hospitals")
+		{
+			hospitals.GET("", hospitalHandler.GetAllHospitals)     // List hospitals (filtered by user access)
+			hospitals.GET("/:id", hospitalHandler.GetHospital)     // Get hospital details
+			hospitals.GET("/:id/rooms", roomHandler.GetRoomsByHospital) // Get rooms in hospital
+
+			// Admin-only operations
+			hospitals.POST("", middleware.RequireAdmin(), hospitalHandler.CreateHospital)
+			hospitals.PUT("/:id", middleware.RequireAdmin(), hospitalHandler.UpdateHospital)
+			hospitals.DELETE("/:id", middleware.RequireAdmin(), hospitalHandler.DeleteHospital)
+		}
+
+		// Room Management
+		rooms := api.Group("/rooms")
+		{
+			rooms.GET("", roomHandler.GetAllRooms)             // List all rooms (filtered by user access)
+			rooms.GET("/:id", roomHandler.GetRoom)             // Get room details
+
+			// Admin-only operations
+			rooms.POST("", middleware.RequireAdmin(), roomHandler.CreateRoom)
+			rooms.PUT("/:id", middleware.RequireAdmin(), roomHandler.UpdateRoom)
+			rooms.DELETE("/:id", middleware.RequireAdmin(), roomHandler.DeleteRoom)
+		}
+
+		// Dashboard endpoints
+		dashboard := api.Group("/dashboard")
+		{
+			dashboard.GET("/rooms/:room_id", theaterHandler.GetRoomDashboard)
+			
+			// Admin-only timer operations by room_id
+			dashboard.POST("/rooms/:room_id/timer/op", middleware.RequireAdmin(), theaterHandler.UpdateTimerByRoomID)
+			dashboard.POST("/rooms/:room_id/timer/cd", middleware.RequireAdmin(), theaterHandler.UpdateCountdownTimerByRoomID)
+			dashboard.PATCH("/rooms/:room_id/timer/cd/adjust", middleware.RequireAdmin(), theaterHandler.AdjustCountdownTimerByRoomID)
+		}
 	}
 
 	// 11. Setup graceful shutdown
