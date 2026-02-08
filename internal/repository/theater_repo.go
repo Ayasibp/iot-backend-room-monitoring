@@ -18,12 +18,27 @@ func NewTheaterRepo(db *gorm.DB) *TheaterRepository {
 
 // GetNewRawLogs fetches raw telemetry logs with ID greater than lastID
 // Used by the background worker to poll for new data
+// DEPRECATED: Use GetAllRawTelemetry and check updated_at instead
 func (r *TheaterRepository) GetNewRawLogs(lastID int) ([]models.TheaterRawTelemetry, error) {
 	var logs []models.TheaterRawTelemetry
 	err := r.db.Where("id > ?", lastID).
 		Order("id ASC").
 		Find(&logs).Error
 	return logs, err
+}
+
+// GetAllRawTelemetry fetches all raw telemetry data for all rooms
+func (r *TheaterRepository) GetAllRawTelemetry() ([]models.TheaterRawTelemetry, error) {
+	var telemetry []models.TheaterRawTelemetry
+	err := r.db.Order("room_name ASC").Find(&telemetry).Error
+	return telemetry, err
+}
+
+// GetAllLiveStates retrieves live states for all rooms
+func (r *TheaterRepository) GetAllLiveStates() ([]models.TheaterLiveState, error) {
+	var states []models.TheaterLiveState
+	err := r.db.Order("room_name ASC").Find(&states).Error
+	return states, err
 }
 
 // GetLiveState retrieves the live state for a specific room
@@ -60,6 +75,13 @@ func (r *TheaterRepository) CreateLiveStateIfNotExists(roomName string) error {
 
 // UpdateOperationTimer updates specific operation timer fields
 func (r *TheaterRepository) UpdateOperationTimer(roomName string, updates map[string]interface{}) error {
+	return r.db.Model(&models.TheaterLiveState{}).
+		Where("room_name = ?", roomName).
+		Updates(updates).Error
+}
+
+// UpdateCountdownTimer updates specific countdown timer fields
+func (r *TheaterRepository) UpdateCountdownTimer(roomName string, updates map[string]interface{}) error {
 	return r.db.Model(&models.TheaterLiveState{}).
 		Where("room_name = ?", roomName).
 		Updates(updates).Error

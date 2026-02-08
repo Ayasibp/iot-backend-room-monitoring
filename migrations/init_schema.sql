@@ -24,11 +24,13 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 );
 
 -- 3. RAW TELEMETRY (Hardware writes here)
--- The hardware inserts data here. It does NOT perform calculations.
+-- The hardware updates a single row per room. It does NOT perform calculations.
+-- Hardware should UPDATE the same row per room using room_name, not INSERT new rows.
 CREATE TABLE IF NOT EXISTS theater_raw_telemetry (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    room_name VARCHAR(50) DEFAULT 'OT-01',
+    room_name VARCHAR(50) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     -- Inputs from Hardware
     temp FLOAT DEFAULT NULL,
@@ -47,14 +49,18 @@ CREATE TABLE IF NOT EXISTS theater_raw_telemetry (
     air FLOAT DEFAULT NULL,
     vacuum INT DEFAULT NULL,
     instrument FLOAT DEFAULT NULL,
-    carbon FLOAT DEFAULT NULL
+    carbon FLOAT DEFAULT NULL,
+    
+    INDEX idx_room_name (room_name),
+    CONSTRAINT unique_room_name UNIQUE (room_name)
 );
 
 -- 4. LIVE STATE (Dashboard reads this)
--- The Go Background Worker updates this single row.
+-- The Go Background Worker updates this table (one row per room).
+-- Worker detects changes via updated_at timestamp comparison.
 CREATE TABLE IF NOT EXISTS theater_live_state (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    room_name VARCHAR(50) UNIQUE DEFAULT 'OT-01',
+    room_name VARCHAR(50) NOT NULL UNIQUE,
     
     -- A. Calculated Results (From Worker)
     ach_theoretical FLOAT DEFAULT 0.0, -- Method 1
@@ -77,7 +83,16 @@ CREATE TABLE IF NOT EXISTS theater_live_state (
     
     -- E. Internal Worker State (To track Method 2 timing)
     ahu_cycle_start_time DATETIME NULL,  -- If NOT NULL, cycle is active
-    last_processed_raw_id INT DEFAULT 0, -- Pointer to raw table
+    last_processed_raw_id INT DEFAULT 0 COMMENT 'Deprecated: Use last_processed_at instead',
+    last_processed_at TIMESTAMP NULL,    -- Last time the raw telemetry was processed
+
+    -- F. Medical Gases
+    oxygen FLOAT DEFAULT NULL,
+    nitrous FLOAT DEFAULT NULL,
+    air FLOAT DEFAULT NULL,
+    vacuum INT DEFAULT NULL,
+    instrument FLOAT DEFAULT NULL,
+    carbon FLOAT DEFAULT NULL,
     
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -112,8 +127,33 @@ ON DUPLICATE KEY UPDATE username=username;
 INSERT INTO theater_live_state (room_name) VALUES ('OT-01')
 ON DUPLICATE KEY UPDATE room_name=room_name;
 
--- Insert sample raw telemetry data (optional - for testing)
+-- Insert sample raw telemetry data for OT-01
+-- Hardware pattern: UPDATE this row when sensors change, don't INSERT new rows
+INSERT INTO theater_raw_telemetry (room_name, temp, humidity, room_pressure, room_status, laju_aliran_ahu, volume_ruangan, logic_ahu, oxygen, air, vacuum, instrument, carbon) VALUES ('OT-01', 22.5, 55, 1.2, 1, 500, 100, 0, 95.0, 21.0, 1, 100.0, 100.0)
+ON DUPLICATE KEY UPDATE 
+    temp = VALUES(temp),
+    humidity = VALUES(humidity),
+    room_pressure = VALUES(room_pressure),
+    updated_at = CURRENT_TIMESTAMP;
+
+-- Initialize last_processed_at for existing rooms
+UPDATE theater_live_state ls
+INNER JOIN theater_raw_telemetry rt ON ls.room_name = rt.room_name
+SET ls.last_processed_at = rt.updated_at
+WHERE ls.last_processed_at IS NULL;
+
+-- Optional: Insert sample data for multiple rooms (for testing)
 -- INSERT INTO theater_raw_telemetry 
--- (room_name, temp, humidity, room_pressure, room_status, laju_aliran_ahu, volume_ruangan, logic_ahu, oxygen, air) 
+-- (room_name, temp, humidity, room_pressure, room_status, laju_aliran_ahu, volume_ruangan, logic_ahu, oxygen, air, vacuum, instrument, carbon) 
 -- VALUES 
--- ('OT-01', 22.5, 55, 1.2, 1, 500, 100, 1, 95.0, 21.0);
+--     ('OT-02', 23.0, 60, 1.1, 1, 450, 90, 0, 96.0, 21.0, 1, 100.0, 100.0),
+--     ('OT-03', 21.5, 50, 1.3, 1, 520, 110, 0, 94.0, 21.0, 1, 100.0, 100.0)
+-- ON DUPLICATE KEY UPDATE 
+--     temp = VALUES(temp),
+--     humidity = VALUES(humidity),
+--     room_pressure = VALUES(room_pressure),
+--     updated_at = CURRENT_TIMESTAMP;
+
+-- INSERT INTO theater_live_state (room_name) 
+-- VALUES ('OT-02'), ('OT-03')
+-- ON DUPLICATE KEY UPDATE room_name=room_name;
