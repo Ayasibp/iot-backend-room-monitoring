@@ -6,7 +6,8 @@ import "time"
 // Hardware updates a single row per room with raw telemetry data
 type TheaterRawTelemetry struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	RoomName  string    `gorm:"size:50;uniqueIndex;default:'OT-01'" json:"room_name"`
+	RoomID    *uint     `gorm:"index" json:"room_id"`                                  // New: FK to rooms table
+	RoomName  string    `gorm:"size:50;uniqueIndex;default:'OT-01'" json:"room_name"` // Kept for backward compatibility
 	CreatedAt time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time `gorm:"default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 
@@ -28,6 +29,9 @@ type TheaterRawTelemetry struct {
 	Vacuum     *int     `json:"vacuum"`
 	Instrument *float64 `json:"instrument"`
 	Carbon     *float64 `json:"carbon"`
+
+	// Relationships
+	Room Room `gorm:"foreignKey:RoomID" json:"room,omitempty"`
 }
 
 // TableName specifies the table name for TheaterRawTelemetry model
@@ -39,7 +43,8 @@ func (TheaterRawTelemetry) TableName() string {
 // The background worker updates this single row with calculated results
 type TheaterLiveState struct {
 	ID       uint   `gorm:"primaryKey" json:"id"`
-	RoomName string `gorm:"size:50;uniqueIndex;default:'OT-01'" json:"room_name"`
+	RoomID   *uint  `gorm:"index" json:"room_id"`                                     // New: FK to rooms table
+	RoomName string `gorm:"size:50;uniqueIndex;default:'OT-01'" json:"room_name"` // Kept for backward compatibility
 
 	// A. Calculated results from worker
 	AchTheoretical float64 `gorm:"column:ach_theoretical;default:0.0" json:"ach_theoretical"` // Method 1
@@ -74,6 +79,9 @@ type TheaterLiveState struct {
 	Carbon     *float64 `json:"carbon"`
 
 	UpdatedAt time.Time `gorm:"default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
+
+	// Relationships
+	Room Room `gorm:"foreignKey:RoomID" json:"room,omitempty"`
 }
 
 // TableName specifies the table name for TheaterLiveState model
