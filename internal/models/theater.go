@@ -3,11 +3,12 @@ package models
 import "time"
 
 // TheaterRawTelemetry represents the theater_raw_telemetry table
-// Hardware writes raw telemetry data here without calculations
+// Hardware updates a single row per room with raw telemetry data
 type TheaterRawTelemetry struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	RoomName  string    `gorm:"size:50;default:'OT-01'" json:"room_name"`
+	RoomName  string    `gorm:"size:50;uniqueIndex;default:'OT-01'" json:"room_name"`
 	CreatedAt time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt time.Time `gorm:"default:CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" json:"updated_at"`
 
 	// Sensor inputs from hardware
 	Temp         *float64 `json:"temp"`
@@ -61,7 +62,8 @@ type TheaterLiveState struct {
 
 	// E. Internal worker state (for Method 2 timing)
 	AhuCycleStartTime  *time.Time `gorm:"column:ahu_cycle_start_time" json:"ahu_cycle_start_time"`
-	LastProcessedRawID int        `gorm:"column:last_processed_raw_id;default:0" json:"last_processed_raw_id"`
+	LastProcessedRawID int        `gorm:"column:last_processed_raw_id;default:0" json:"last_processed_raw_id"` // Deprecated
+	LastProcessedAt    *time.Time `gorm:"column:last_processed_at" json:"last_processed_at"`                    // Track last processed timestamp
 
 	// F. Medical gases
 	Oxygen     *float64 `json:"oxygen"`
