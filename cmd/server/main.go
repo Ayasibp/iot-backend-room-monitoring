@@ -89,10 +89,14 @@ func main() {
 	theater := r.Group("/theater")
 	theater.Use(middleware.AuthMiddleware())
 	{
-		theater.GET("/state", theaterHandler.GetState)
+		theater.GET("/state", theaterHandler.GetState)       // Get single room state
+		theater.GET("/states", theaterHandler.GetAllStates)  // Get all room states
+		theater.GET("/rooms", theaterHandler.GetRooms)       // Get list of room names
 
 		// Admin-only routes
 		theater.POST("/timer/op", middleware.RequireAdmin(), theaterHandler.UpdateTimer)
+		theater.POST("/timer/cd", middleware.RequireAdmin(), theaterHandler.UpdateCountdownTimer)
+		theater.PATCH("/timer/cd/adjust", middleware.RequireAdmin(), theaterHandler.AdjustCountdownTimer)
 	}
 
 	// 11. Setup graceful shutdown
