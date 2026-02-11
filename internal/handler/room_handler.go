@@ -113,15 +113,42 @@ func (h *RoomHandler) CreateRoom(c *gin.Context) {
 	// Get user ID from context
 	userID, _ := c.Get("userID")
 
-	if err := h.roomService.CreateRoom(&room, userID.(uint)); err != nil {
+	response, err := h.roomService.CreateRoom(&room, userID.(uint))
+	if err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	utils.SuccessResponse(c, gin.H{
-		"message": "Room created successfully",
-		"room":    room,
-	})
+	// Build response message
+	message := "Room created successfully."
+	if response.APIKey != nil {
+		message += " API key is shown only once - please save it securely."
+	}
+	if response.APIKeyError != "" {
+		message += " WARNING: " + response.APIKeyError
+	}
+
+	responseData := gin.H{
+		"message": message,
+		"room":    response.Room,
+	}
+
+	// Only include api_key if it was successfully generated
+	if response.APIKey != nil {
+		responseData["api_key"] = response.APIKey
+	}
+
+	// Include warnings if any
+	if len(response.TelemetryWarnings) > 0 {
+		responseData["warnings"] = response.TelemetryWarnings
+	}
+
+	// Include API key error if present
+	if response.APIKeyError != "" {
+		responseData["api_key_error"] = response.APIKeyError
+	}
+
+	utils.SuccessResponse(c, responseData)
 }
 
 // UpdateRoom updates an existing room (admin only)
