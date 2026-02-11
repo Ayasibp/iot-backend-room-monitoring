@@ -1,14 +1,19 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git
+RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
 
+# Set Go proxy for faster downloads (optional but recommended)
+ENV GOPROXY=https://proxy.golang.org,direct
+
 # Copy go mod files
 COPY go.mod go.sum ./
-RUN go mod download
+
+# Download dependencies with verbose output for debugging
+RUN go mod download -x || (echo "Failed to download Go modules" && cat go.mod && exit 1)
 
 # Copy source code
 COPY . .

@@ -76,19 +76,32 @@ check_env_file() {
 backup_database() {
     print_info "Creating database backup..."
     
+    # Create backup directory with sudo if needed
     if [ ! -d "$BACKUP_DIR" ]; then
-        mkdir -p "$BACKUP_DIR"
+        if [ -w /opt/backups ] 2>/dev/null || [ -w /opt ] 2>/dev/null; then
+            mkdir -p "$BACKUP_DIR"
+        else
+            print_info "Creating backup directory with sudo..."
+            sudo mkdir -p "$BACKUP_DIR"
+            sudo chown $USER:$USER "$BACKUP_DIR"
+        fi
     fi
     
     if docker ps | grep -q iot-mysql; then
+        # Source .env file to get MYSQL_ROOT_PASSWORD
+        if [ -f .env ]; then
+            export $(grep -v '^#' .env | xargs)
+        fi
+        
         BACKUP_FILE="$BACKUP_DIR/backup_$(date +%Y%m%d_%H%M%S).sql"
         docker-compose exec -T db mysqldump -u root -p"${MYSQL_ROOT_PASSWORD}" iot_theater_monitoring > "$BACKUP_FILE" 2>/dev/null || true
         
-        if [ -f "$BACKUP_FILE" ]; then
+        if [ -f "$BACKUP_FILE" ] && [ -s "$BACKUP_FILE" ]; then
             gzip "$BACKUP_FILE"
             print_success "Database backed up to $BACKUP_FILE.gz"
         else
             print_warning "Backup skipped (database might be empty or not running)"
+            [ -f "$BACKUP_FILE" ] && rm "$BACKUP_FILE"
         fi
     else
         print_warning "Database container not running. Skipping backup."

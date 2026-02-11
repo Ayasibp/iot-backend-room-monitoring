@@ -41,6 +41,7 @@ func main() {
 	hospitalRepo := repository.NewHospitalRepo(db)
 	roomRepo := repository.NewRoomRepo(db)
 	userHospitalRepo := repository.NewUserHospitalRepo(db)
+	apiKeyRepo := repository.NewDeviceAPIKeyRepo(db)
 
 	// Ensure live state exists for OT-01
 	if err := theaterRepo.CreateLiveStateIfNotExists("OT-01"); err != nil {
@@ -52,7 +53,8 @@ func main() {
 	theaterService := service.NewTheaterService(theaterRepo, auditRepo)
 	workerService := service.NewWorkerService(theaterRepo)
 	hospitalService := service.NewHospitalService(hospitalRepo, userHospitalRepo, auditRepo)
-	roomService := service.NewRoomService(roomRepo, hospitalRepo, userHospitalRepo, auditRepo)
+	roomService := service.NewRoomService(roomRepo, hospitalRepo, userHospitalRepo, auditRepo, theaterRepo, apiKeyRepo)
+	esp32Service := service.NewESP32Service(theaterRepo, roomRepo)
 
 	// 6. Start background worker in goroutine
 	ctx, cancel := context.WithCancel(context.Background())
@@ -73,6 +75,7 @@ func main() {
 	theaterHandler := handler.NewTheaterHandler(theaterService)
 	hospitalHandler := handler.NewHospitalHandler(hospitalService)
 	roomHandler := handler.NewRoomHandler(roomService)
+	esp32Handler := handler.NewESP32Handler(esp32Service)
 
 	// 10. Define routes
 	// Health check endpoint
@@ -145,6 +148,14 @@ func main() {
 			dashboard.POST("/rooms/:room_id/timer/cd", middleware.RequireAdmin(), theaterHandler.UpdateCountdownTimerByRoomID)
 			dashboard.PATCH("/rooms/:room_id/timer/cd/adjust", middleware.RequireAdmin(), theaterHandler.AdjustCountdownTimerByRoomID)
 		}
+	}
+
+	// ESP32 routes (public with API key authentication)
+	esp32 := r.Group("/api/v1/esp32")
+	{
+		// Telemetry endpoint - requires API key in X-API-Key header
+		esp32.POST("/telemetry/:room_id", middleware.APIKeyAuthMiddleware(apiKeyRepo), esp32Handler.UpdateTelemetry)
+		esp32.GET("/telemetry/:room_id", middleware.APIKeyAuthMiddleware(apiKeyRepo), esp32Handler.GetTelemetry)
 	}
 
 	// 11. Setup graceful shutdown
